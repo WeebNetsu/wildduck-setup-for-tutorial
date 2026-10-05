@@ -1,0 +1,249 @@
+volumes:
+  mongo:
+  redis:
+  traefik:
+
+services:
+  wildduck:
+    image: ghcr.io/zone-eu/wildduck:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WILDDUCK_API_PORT:-8080}:8080"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APPCONF_dbs_mongo: ${WILDDUCK_MONGO_URL:-mongodb://mongo:27017/wildduck}
+      APPCONF_dbs_redis: ${WILDDUCK_REDIS_URL:-redis://redis:6379/3}
+      APPCONF_dbs_sender: ${WILDDUCK_SENDER_DB:-zone-mta}
+      APPCONF_processes: "1"
+      APPCONF_api_port: "8080"
+      APPCONF_imap_useProxy: "true"
+      APPCONF_imap_port: "143"
+      APPCONF_imap_secure: "false"
+      APPCONF_imap_disableSTARTTLS: "true"
+      APPCONF_pop3_useProxy: "true"
+      APPCONF_pop3_port: "110"
+      APPCONF_pop3_secure: "false"
+      APPCONF_pop3_disableSTARTTLS: "true"
+      APPCONF_pop3_ignoreSTARTTLS: "true"
+      APPCONF_api_host: 0.0.0.0
+      APPCONF_api_accessToken: ${WILDDUCK_API_ACCESS_TOKEN:?set WILDDUCK_API_ACCESS_TOKEN}
+      APPCONF_api_accessControl_secret: ${WILDDUCK_API_ACCESSCONTROL_SECRET:?set WILDDUCK_API_ACCESSCONTROL_SECRET}
+      APPCONF_emailDomain: ${MAIL_DOMAIN:?set MAIL_DOMAIN}
+      APPCONF_webauthn_rpId: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      APPCONF_imap_setup_hostname: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      APPCONF_imap_setup_port: "993"
+      APPCONF_imap_setup_secure: "true"
+      APPCONF_pop3_setup_hostname: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      APPCONF_pop3_setup_port: "995"
+      APPCONF_pop3_setup_secure: "true"
+      APPCONF_smtp_setup_hostname: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      APPCONF_smtp_setup_port: "465"
+      APPCONF_smtp_setup_secure: "true"
+      APPCONF_sender_loopSecret: ${WILDDUCK_LOOP_SECRET:?set WILDDUCK_LOOP_SECRET}
+      APPCONF_dkim_secret: ${WILDDUCK_DKIM_SECRET:?set WILDDUCK_DKIM_SECRET}
+  wildduck-webmail:
+    image: nodemailer/wildduck-webmail:latest
+    restart: unless-stopped
+    command:
+      - ""
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      wildduck:
+        condition: service_started
+    environment:
+      APPCONF_service_domain: ${MAIL_DOMAIN:?set MAIL_DOMAIN}
+      APPCONF_service_domains: ${MAIL_DOMAIN:?set MAIL_DOMAIN}
+      APPCONF_service_allowJoin: "false"
+      APPCONF_api_url: http://wildduck:8080
+      APPCONF_api_accessToken: ${WILDDUCK_API_ACCESS_TOKEN:?set WILDDUCK_API_ACCESS_TOKEN}
+      APPCONF_dbs_mongo: ${WEBMAIL_MONGO_URL:-mongodb://mongo:27017/wildduck-webmail}
+      APPCONF_dbs_redis: ${WEBMAIL_REDIS_URL:-redis://redis:6379/5}
+      APPCONF_www_proxy: loopback,linklocal,uniquelocal
+      APPCONF_setup_imap_hostname: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      APPCONF_setup_imap_port: "993"
+      APPCONF_setup_imap_secure: "true"
+      APPCONF_setup_pop3_hostname: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      APPCONF_setup_pop3_port: "995"
+      APPCONF_setup_pop3_secure: "true"
+      APPCONF_setup_smtp_hostname: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      APPCONF_setup_smtp_port: "465"
+      APPCONF_setup_smtp_secure: "true"
+      APPCONF_u2f_appId: https://${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+  zonemta:
+    image: ghcr.io/zone-eu/zonemta-wildduck:latest
+    restart: unless-stopped
+    hostname: ${SMTP_HOSTNAME:-${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APPCONF_dbs_mongo: ${ZONEMTA_MONGO_URL:-mongodb://mongo:27017/wildduck}
+      APPCONF_dbs_redis: ${ZONEMTA_REDIS_URL:-redis://redis:6379/2}
+      APPCONF_dbs_sender: ${ZONEMTA_SENDER_DB:-zone-mta}
+      APPCONF_smtpInterfaces_feeder_enabled: "true"
+      APPCONF_smtpInterfaces_feeder_processes: "1"
+      APPCONF_smtpInterfaces_feeder_maxSize: "31457280"
+      APPCONF_smtpInterfaces_feeder_host: 0.0.0.0
+      APPCONF_smtpInterfaces_feeder_port: "587"
+      APPCONF_smtpInterfaces_feeder_logger: "true"
+      APPCONF_smtpInterfaces_feeder_authentication: "true"
+      APPCONF_smtpInterfaces_feeder_maxRecipients: "1000"
+      APPCONF_smtpInterfaces_feeder_starttls: "false"
+      APPCONF_smtpInterfaces_feeder_secure: "false"
+      APPCONF_smtpInterfaces_feeder_useProxy: "true"
+      "APPCONF_plugins_modules/@zone-eu/zonemta-wildduck_hostname": ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      "APPCONF_plugins_modules/@zone-eu/zonemta-wildduck_srs_secret": ${WILDDUCK_LOOP_SECRET:?set WILDDUCK_LOOP_SECRET}
+      "APPCONF_plugins_modules/@zone-eu/zonemta-wildduck_srs_rewriteDomain": ${MAIL_DOMAIN:?set MAIL_DOMAIN}
+      "APPCONF_plugins_modules/@zone-eu/zonemta-wildduck_dkim_secret": ${WILDDUCK_DKIM_SECRET:?set WILDDUCK_DKIM_SECRET}
+      APPCONF_zones_default_host: traefik
+      APPCONF_zones_default_port: "25"
+  kirin:
+    image: wildduck-kirin:0.1.3
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM ghcr.io/zone-eu/kirin:0.1.3
+        USER root
+        RUN npm install --omit=dev --ignore-scripts --no-save --package-lock=false \
+              @zone-eu/kirin-plugin-rspamd@0.1.0 \
+              @zone-eu/kirin-plugin-wildduck@0.1.1 \
+            && npm cache clean --force
+        USER node
+    restart: unless-stopped
+    hostname: ${SMTP_HOSTNAME:-${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      wildduck:
+        condition: service_started
+      zonemta:
+        condition: service_started
+      rspamd:
+        condition: service_started
+    environment:
+      APPCONF_ident: kirin
+      APPCONF_smtp_host: 0.0.0.0
+      APPCONF_smtp_port: "25"
+      APPCONF_smtp_name: ${SMTP_HOSTNAME:-${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}}
+      APPCONF_smtp_size: "26214400"
+      APPCONF_smtp_dataHookTimeout: "35000"
+      APPCONF_smtp_useProxy: "true"
+      APPCONF_smtp_disableSTARTTLS: "false"
+      APPCONF_smtp_tls_certPath: ${KIRIN_TLS_CERT_FILE:-./certs/wildduck.dockerized.test.pem}
+      APPCONF_smtp_tls_keyPath: ${KIRIN_TLS_KEY_FILE:-./certs/wildduck.dockerized.test-key.pem}
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_enabled": receiver
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_ordering": "50"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_host": rspamd
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_port": "11333"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_timeout": "29"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_addHeaders": always
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_dkim_enabled": "1"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_header_bar": X-Rspamd-Bar
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_header_report": X-Rspamd-Report
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_header_score": X-Rspamd-Score
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_check_authenticated": "1"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_check_privateIp": "1"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_reject_spam": "0"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_softReject_enabled": "1"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_milterHeaders_enabled": "1"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_spamBar_positive": "+"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_spamBar_negative": "-"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-rspamd_spamBar_neutral": "/"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_enabled": receiver
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_ordering": "100"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_redis_host": redis
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_redis_port": "6379"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_redis_db": "3"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_mongo_url": ${KIRIN_MONGO_URL:-mongodb://mongo:27017/wildduck}
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_mongo_sender": ${KIRIN_SENDER_DB:-zone-mta}
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_sender_enabled": "true"
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_sender_zone": default
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_sender_gfs": mail
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_sender_collection": zone-queue
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_sender_loopSecret": ${WILDDUCK_LOOP_SECRET:?set WILDDUCK_LOOP_SECRET}
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_srs_secret": ${WILDDUCK_LOOP_SECRET:?set WILDDUCK_LOOP_SECRET}
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_attachments_type": gridstore
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_attachments_bucket": attachments
+      "APPCONF_plugins_conf_modules/@zone-eu/kirin-plugin-wildduck_attachments_decodeBase64": "true"
+    volumes:
+      - ./certs:/app/certs:ro
+
+  rspamd:
+    image: rspamd/rspamd
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./default-config/rspamd/worker-normal.conf:/etc/rspamd/worker-normal.conf:ro
+      - ./default-config/rspamd/override.d:/etc/rspamd/override.d:ro
+
+  mongo:
+    image: mongo
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'mongosh --quiet --eval "db.adminCommand({ ping: 1 }).ok" | grep 1 >/dev/null'
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - mongo:/data/db
+    # ports:
+    #   - 27017:27017
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    volumes:
+      - redis:/data
+
+  traefik:
+    image: traefik:3.7.11
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - /usr/local/bin/traefik-entrypoint.sh
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME}
+      TRAEFIK_TLS_MODE: ${TRAEFIK_TLS_MODE:-file}
+      TRAEFIK_CERT_RESOLVER: ${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+      TRAEFIK_ACME_EMAIL: ${TRAEFIK_ACME_EMAIL:-}
+      TRAEFIK_CERT_FILE: ${TRAEFIK_CERT_FILE:-./certs/wildduck.dockerized.test.pem}
+      TRAEFIK_KEY_FILE: ${TRAEFIK_KEY_FILE:-./certs/wildduck.dockerized.test-key.pem}
+      TRAEFIK_LOG_LEVEL: ${TRAEFIK_LOG_LEVEL:-INFO}
+      TRAEFIK_PROXY_PROTOCOL_TRUSTED_IPS: "${TRAEFIK_PROXY_PROTOCOL_TRUSTED_IPS:-}"
+    ports:
+      - "25:25/tcp"
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "993:993/tcp"
+      - "995:995/tcp"
+      - "465:465/tcp"
+    volumes:
+      - traefik:/data
+      - ./container-scripts/traefik-entrypoint.sh:/usr/local/bin/traefik-entrypoint.sh:ro
+      - ./dynamic_conf:/etc/traefik/dynamic_conf:ro
+      - ./certs:/etc/traefik/certs:ro
